@@ -251,4 +251,9 @@ export interface AirClientError {
   httpStatus?: number;
   /** AIR-specific error code (timeout, upstream_4xx, …) when surfaced. */
   airCode?: string;
+  /** Any further structured fields of the AIR error payload (everything except
+   *  message/type/code) — e.g. a 402's budget/balance numbers
+   *  (monthlyUsedUsd/monthlyCapUsd/dailyUsedUsd/dailyCapUsd, balanceCredits).
+   *  Lets the UI show exact figures instead of parsing the message text. */
+  details?: Record<string, unknown>;
 }

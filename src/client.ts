@@ -185,7 +185,10 @@ interface RawCompletion {
     cost?: number;
   };
   air?: Record<string, unknown>;
-  error?: { message?: string; code?: string; type?: string };
+  // Beyond message/type/code, an error payload may carry type-specific
+  // structured fields (e.g. a 402's monthlyUsedUsd/monthlyCapUsd/…) — the index
+  // signature keeps them typed-through so `toError` can surface them as details.
+  error?: { message?: string; code?: string; type?: string; [key: string]: unknown };
 }
 
 interface RawStreamChunk {
@@ -321,6 +324,13 @@ const toError = (raw: RawCompletion, status: number): AirClientError => {
     httpStatus: status,
   };
   if (raw.error?.code) error.airCode = raw.error.code;
+  // Pass through any further structured fields (everything except
+  // message/type/code) — e.g. the budget/balance numbers of a 402
+  // (monthlyUsedUsd/monthlyCapUsd/…) so the UI can show exact figures.
+  if (raw.error) {
+    const { message: _m, type: _t, code: _c, ...rest } = raw.error;
+    if (Object.keys(rest).length > 0) error.details = rest;
+  }
   return error;
 };
 
