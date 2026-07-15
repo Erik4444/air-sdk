@@ -35,6 +35,8 @@ console.log(res.message.content);
 console.log(res.model, res.usage?.costUsd);
 // res.executionId → pass to air.feedback() to rate this exact routing
 // decision; add `debug: true` to get the full AirEnvelope (res.air).
+// Feedback becomes versioned, append-only quality evidence — never a
+// silent live-ranking change.
 
 // Streaming with model-selection trace and tool-call events.
 for await (const ev of air.chatStream({ model: "air-auto", messages })) {
@@ -44,15 +46,28 @@ for await (const ev of air.chatStream({ model: "air-auto", messages })) {
 
 ## Selection policies
 
-Requests carry a `SelectionPolicy`: weights sort the model pool, floors gate
-it hard.
+Requests carry a `SelectionPolicy`. The core contract is the presets:
+`best` (pure quality), `balanced` (quality/latency mix), `fast` and `cheap`
+(optimize their named goal within a `maxQualityRegret` limit — default
+8 points against the best eligible model). Floors gate the pool hard.
 
 ```ts
 const policy = {
-  weights: { quality: 0.7, latency: 0.3, cost: 0 },
+  preset: "cheap",
+  maxQualityRegret: 8,
   floors: { euOnly: true, minReliability: 80 },
 };
 await air.chat({ model: "air-auto", policy, messages });
+```
+
+Raw weights remain available as the custom case — once you set them, the
+policy is `custom`, not a redefined preset:
+
+```ts
+const custom = {
+  weights: { quality: 0.7, latency: 0.3, cost: 0 },
+  floors: { euOnly: true },
+};
 ```
 
 Constraints such as `requireVision` or `requireTools` are inferred from the
