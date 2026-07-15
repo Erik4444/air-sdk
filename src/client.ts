@@ -102,12 +102,7 @@ export class AirClient {
     const body = toOpenAIBody(req, true);
     const response = await this.send(body, req, signal);
     if (!response.ok) {
-      let parsed: RawCompletion = {};
-      try {
-        parsed = (await response.json()) as RawCompletion;
-      } catch {
-        /* keep empty */
-      }
+      const parsed = await parseErrorResponse(response);
       yield { type: "error", error: toError(parsed, response.status) };
       return;
     }
@@ -190,6 +185,43 @@ interface RawCompletion {
   // signature keeps them typed-through so `toError` can surface them as details.
   error?: { message?: string; code?: string; type?: string; [key: string]: unknown };
 }
+
+/**
+ * AIR keeps streaming failures on the SSE contract even when the HTTP status
+ * is non-2xx (`event: error` + OpenAI error JSON + `[DONE]`). Fetch considers
+ * that response unsuccessful before `decodeStream` runs, so parse the body as
+ * either regular JSON or SSE instead of losing the actionable AIR error code.
+ */
+const parseErrorResponse = async (response: Response): Promise<RawCompletion> => {
+  let raw = "";
+  try {
+    raw = await response.text();
+  } catch {
+    return {};
+  }
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw) as RawCompletion;
+  } catch {
+    // Continue with SSE framing below.
+  }
+  for (const block of raw.split(/\r?\n\r?\n/)) {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(data) as RawCompletion;
+      if (parsed.error) return parsed;
+    } catch {
+      // Ignore keepalives/malformed frames and keep looking for an error frame.
+    }
+  }
+  return {};
+};
 
 interface RawStreamChunk {
   id?: string;

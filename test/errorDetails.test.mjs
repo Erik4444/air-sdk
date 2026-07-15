@@ -17,6 +17,12 @@ const clientWithJson = (status, body) =>
 
 const rejection = (promise) => promise.then(() => null, (e) => e);
 
+const collect = async (iterable) => {
+  const out = [];
+  for await (const event of iterable) out.push(event);
+  return out;
+};
+
 // A 402 budget/credit block carries the exact figures alongside message/type —
 // the client must surface them as `details` so the UI can show "$5.12 / $5.00"
 // instead of parsing the English message text.
@@ -69,4 +75,45 @@ test("toError leaves `details` unset when there are no extra fields", async () =
   );
   assert.equal(err.code, "rate_limit");
   assert.equal(err.details, undefined);
+});
+
+test("chatStream preserves AIR code and message from a non-2xx SSE error frame", async () => {
+  const body = [
+    "event: error",
+    'data: {"error":{"message":"Tool messages are not supported by this endpoint","type":"invalid_request_error","code":"upstream_4xx"}}',
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+  const client = new AirClient({
+    baseUrl: "http://air.test",
+    fetch: async () => new Response(body, {
+      status: 400,
+      headers: { "content-type": "text/event-stream" },
+    }),
+  });
+  const events = await collect(client.chatStream({
+    model: "air-auto",
+    messages: [{ role: "user", content: "hi" }],
+  }));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "error");
+  assert.equal(events[0].error.httpStatus, 400);
+  assert.equal(events[0].error.code, "invalid_request_error");
+  assert.equal(events[0].error.airCode, "upstream_4xx");
+  assert.equal(events[0].error.message, "Tool messages are not supported by this endpoint");
+});
+
+test("chatStream still parses regular JSON errors", async () => {
+  const client = clientWithJson(429, {
+    error: { message: "Try later", type: "rate_limit_error", code: "rate_limit" },
+  });
+  const events = await collect(client.chatStream({
+    model: "air-auto",
+    messages: [{ role: "user", content: "hi" }],
+  }));
+  assert.equal(events[0].type, "error");
+  assert.equal(events[0].error.code, "rate_limit_error");
+  assert.equal(events[0].error.airCode, "rate_limit");
+  assert.equal(events[0].error.message, "Try later");
 });
