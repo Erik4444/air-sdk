@@ -26,6 +26,10 @@ export interface AirClientOptions {
    *  key reuse the first chosen model while it stays eligible — keeps the
    *  prompt cache warm and the voice consistent across turns. */
   session?: string;
+  /** W3C trace-id (32 lowercase hex). Sent as a `traceparent` header so AIR
+   *  can persist the caller's trace context (A3 of the Viere event-envelope
+   *  contract). Per-call `req.trace` wins. */
+  trace?: string;
   /** Custom fetch impl — useful for testing or for Next.js route-handler proxying. */
   fetch?: typeof fetch;
   /** Optional AbortSignal applied to every request. Per-call signals override this. */
@@ -126,6 +130,16 @@ export class AirClient {
     if (this.opts.stripReasoning) headers["x-air-reasoning"] = "strip";
     const session = req.session ?? this.opts.session;
     if (session) headers["x-air-session"] = session;
+    // W3C Trace Context: `00-<trace-id>-<span-id>-01`. The span id is fresh
+    // per request; the trace id ties every call of one caller-side operation
+    // together so AIR can persist it (event-envelope A3).
+    const trace = req.trace ?? this.opts.trace;
+    if (trace && /^[0-9a-f]{32}$/.test(trace)) {
+      const span = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
+        b.toString(16).padStart(2, "0"),
+      ).join("");
+      headers["traceparent"] = `00-${trace}-${span}-01`;
+    }
     // Selection policy travels in the body (not headers): the floors are richer
     // than the header set. Per-call wins over the client default.
     const policy = req.policy ?? this.opts.policy;

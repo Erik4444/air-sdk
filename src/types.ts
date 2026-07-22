@@ -171,6 +171,9 @@ export interface ChatRequest {
   /** Conversation-sticky routing key for this call (`X-AIR-Session`).
    *  Overrides the client-level `session`. */
   session?: string;
+  /** W3C trace-id (32 lowercase hex) for this call; sent as `traceparent`.
+   *  Overrides the client-level `trace`. */
+  trace?: string;
   /** Hard routing constraints (see SelectionConstraints). Optional. */
   constraints?: SelectionConstraints;
   /** Force the AIR envelope into the response/stream. Defaults to client setting. */
