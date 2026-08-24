@@ -78,6 +78,10 @@ export interface AirEnvelope {
     promptTokens?: number;
     completionTokens?: number;
     costUsd?: number;
+    /** Prompt tokens served from the provider's prompt cache
+     *  (`prompt_tokens_details.cached_tokens` on the wire). Absent when the
+     *  upstream doesn't report caching. */
+    cachedTokens?: number;
   };
   attempts: Array<{
     model: string;
@@ -197,6 +201,8 @@ export interface ChatResponse {
     /** Estimated cost (USD) of this call: the upstream's reported total when
      *  present, else derived from the model's per-1k rates × token counts. */
     costUsd?: number;
+    /** Prompt tokens served from the provider's prompt cache. */
+    cachedTokens?: number;
   };
   /**
    * AIR-side run id, read from the `x-air-execution-id` response header.
@@ -244,7 +250,7 @@ export type StreamEvent =
        * `costUsd` is the upstream's reported cost when present, else derived
        * from the chosen model's per-1k rates × these token counts.
        */
-      usage?: { promptTokens?: number; completionTokens?: number; costUsd?: number };
+      usage?: { promptTokens?: number; completionTokens?: number; costUsd?: number; cachedTokens?: number };
     }
   | { type: "error"; error: AirClientError };
 

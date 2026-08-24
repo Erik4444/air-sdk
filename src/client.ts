@@ -192,6 +192,8 @@ interface RawCompletion {
      *  the call inline; authoritative over a rate-based estimate when it is. */
     total_cost?: number;
     cost?: number;
+    /** OpenAI-/OpenRouter-style cache reporting. */
+    prompt_tokens_details?: { cached_tokens?: number };
   };
   air?: Record<string, unknown>;
   // Beyond message/type/code, an error payload may carry type-specific
@@ -264,6 +266,8 @@ interface RawStreamChunk {
     /** OpenRouter inline cost (USD), when the upstream prices the stream. */
     total_cost?: number;
     cost?: number;
+    /** OpenAI-/OpenRouter-style cache reporting. */
+    prompt_tokens_details?: { cached_tokens?: number };
   };
 }
 
@@ -336,6 +340,9 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
       ...(typeof raw.usage.completion_tokens === "number"
         ? { completionTokens: raw.usage.completion_tokens }
         : {}),
+      ...(typeof raw.usage.prompt_tokens_details?.cached_tokens === "number"
+        ? { cachedTokens: raw.usage.prompt_tokens_details.cached_tokens }
+        : {}),
       ...(typeof raw.usage.total_cost === "number"
         ? { costUsd: raw.usage.total_cost }
         : typeof raw.usage.cost === "number"
@@ -380,7 +387,7 @@ const toError = (raw: RawCompletion, status: number): AirClientError => {
   return error;
 };
 
-type StreamUsage = { promptTokens?: number; completionTokens?: number; costUsd?: number };
+type StreamUsage = { promptTokens?: number; completionTokens?: number; costUsd?: number; cachedTokens?: number };
 
 /** Fill `costUsd` from the chosen model's per-1k rates when the upstream didn't
  *  report a cost inline. Tokens × rate, split by input/output — AIR carries the
@@ -455,6 +462,9 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
           : {}),
         ...(typeof chunk.usage.completion_tokens === "number"
           ? { completionTokens: chunk.usage.completion_tokens }
+          : {}),
+        ...(typeof chunk.usage.prompt_tokens_details?.cached_tokens === "number"
+          ? { cachedTokens: chunk.usage.prompt_tokens_details.cached_tokens }
           : {}),
         // Authoritative inline cost when the upstream prices the stream; else
         // left undefined and derived from the model's rates at done-time.
