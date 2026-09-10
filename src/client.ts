@@ -11,28 +11,23 @@ import type {
 import { readSse } from "./sse.js";
 
 export interface AirClientOptions {
-  /** Base URL of AIR, e.g. `http://localhost:4000`. The `/v1` prefix is appended automatically. */
+  /** Base URL of AIR, e.g. `http://localhost:4000`; the `/v1` prefix is appended automatically. */
   baseUrl: string;
-  /** API token. Sent as `Authorization: Bearer <token>`. Omit for sessions that don't need auth. */
+  /** API token, sent as `Authorization: Bearer <token>`. */
   apiKey?: string;
-  /** Default selection policy (weights + floors) — the sole selection surface.
-   *  Sent as the `policy` body field. Per-call `req.policy` wins. */
+  /** Default selection policy (`policy` body field); per-call `req.policy` wins. */
   policy?: SelectionPolicy;
-  /** When true, include the AIR envelope in every response/stream (`X-AIR-Debug`). */
+  /** Include the AIR envelope in every response/stream (`X-AIR-Debug`). */
   debug?: boolean;
-  /** When true, strip `delta.reasoning` from streaming chunks (`X-AIR-Reasoning: strip`). */
+  /** Strip `delta.reasoning` from streaming chunks (`X-AIR-Reasoning: strip`). */
   stripReasoning?: boolean;
-  /** Conversation-sticky routing key (`X-AIR-Session`). Requests sharing the
-   *  key reuse the first chosen model while it stays eligible — keeps the
-   *  prompt cache warm and the voice consistent across turns. */
+  /** Conversation-sticky routing key (`X-AIR-Session`); requests sharing it reuse the first chosen model while eligible. */
   session?: string;
-  /** W3C trace-id (32 lowercase hex). Sent as a `traceparent` header so AIR
-   *  can persist the caller's trace context (A3 of the Viere event-envelope
-   *  contract). Per-call `req.trace` wins. */
+  /** W3C trace-id (32 lowercase hex), sent as `traceparent`; per-call `req.trace` wins. */
   trace?: string;
-  /** Custom fetch impl — useful for testing or for Next.js route-handler proxying. */
+  /** Custom fetch impl, e.g. for tests or Next.js route-handler proxying. */
   fetch?: typeof fetch;
-  /** Optional AbortSignal applied to every request. Per-call signals override this. */
+  /** AbortSignal applied to every request; per-call signals override it. */
   signal?: AbortSignal;
 }
 
@@ -44,7 +39,7 @@ export class AirClient {
     this.opts = opts;
   }
 
-  /** Non-streaming chat. Resolves to a parsed message + optional envelope. */
+  /** Non-streaming chat; resolves to the parsed message plus optional envelope. */
   async chat(req: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
     const body = toOpenAIBody(req, false);
     const response = await this.send(body, req, signal);
@@ -54,16 +49,7 @@ export class AirClient {
     return fromCompletion(json, executionId);
   }
 
-  /**
-   * Record success/failure feedback for a previous run. Identified by the
-   * `executionId` returned on `ChatResponse.executionId` (or the envelope
-   * id from a stream). Persisted to AIR's metrics so future routing
-   * decisions weigh the same model lower for this task on repeated
-   * negative feedback.
-   *
-   * Throws `AirClientError` on non-2xx. Resolves to void on success — AIR
-   * doesn't return a meaningful body here.
-   */
+  /** Record success/failure feedback for a previous run; throws `AirClientError` on non-2xx. */
   async feedback(req: FeedbackRequest, signal?: AbortSignal): Promise<void> {
     if (!req.executionId) throw new Error("AirClient.feedback: executionId is required");
     const url = new URL("/api/feedback", this.opts.baseUrl).toString();
@@ -101,7 +87,7 @@ export class AirClient {
     }
   }
 
-  /** Streaming chat. Yields a typed event per SSE frame until done. */
+  /** Streaming chat; yields one typed event per SSE frame until done. */
   async *chatStream(req: ChatRequest, signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     const body = toOpenAIBody(req, true);
     const response = await this.send(body, req, signal);
@@ -130,9 +116,8 @@ export class AirClient {
     if (this.opts.stripReasoning) headers["x-air-reasoning"] = "strip";
     const session = req.session ?? this.opts.session;
     if (session) headers["x-air-session"] = session;
-    // W3C Trace Context: `00-<trace-id>-<span-id>-01`. The span id is fresh
-    // per request; the trace id ties every call of one caller-side operation
-    // together so AIR can persist it (event-envelope A3).
+    // W3C Trace Context `00-<trace-id>-<span-id>-01`: fresh span id per request,
+    // the caller's trace id ties every call of one operation together.
     const trace = req.trace ?? this.opts.trace;
     if (trace && /^[0-9a-f]{32}$/.test(trace)) {
       const span = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) =>
@@ -140,12 +125,10 @@ export class AirClient {
       ).join("");
       headers["traceparent"] = `00-${trace}-${span}-01`;
     }
-    // Selection policy travels in the body (not headers): the floors are richer
-    // than the header set. Per-call wins over the client default.
+    // Policy travels in the body, not headers: the floors are richer than the header set.
     const policy = req.policy ?? this.opts.policy;
     if (policy) body.policy = policy;
-    // Constraint headers — AIR treats these as the floor over body-inferred
-    // constraints, so an explicit "true" can only tighten, never widen.
+    // AIR treats these headers as a floor over body-inferred constraints: "true" can only tighten.
     const c = req.constraints;
     if (c) {
       if (c.requireTools) headers["x-air-require-tools"] = "true";
@@ -188,26 +171,18 @@ interface RawCompletion {
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
-    /** OpenRouter cost extensions (USD). Present only when the upstream prices
-     *  the call inline; authoritative over a rate-based estimate when it is. */
+    /** OpenRouter inline cost (USD); authoritative over a rate-based estimate when present. */
     total_cost?: number;
     cost?: number;
-    /** OpenAI-/OpenRouter-style cache reporting. */
     prompt_tokens_details?: { cached_tokens?: number };
   };
   air?: Record<string, unknown>;
-  // Beyond message/type/code, an error payload may carry type-specific
-  // structured fields (e.g. a 402's monthlyUsedUsd/monthlyCapUsd/…) — the index
-  // signature keeps them typed-through so `toError` can surface them as details.
+  // Index signature: type-specific error fields (e.g. a 402's budget numbers) pass through to `toError`.
   error?: { message?: string; code?: string; type?: string; [key: string]: unknown };
 }
 
-/**
- * AIR keeps streaming failures on the SSE contract even when the HTTP status
- * is non-2xx (`event: error` + OpenAI error JSON + `[DONE]`). Fetch considers
- * that response unsuccessful before `decodeStream` runs, so parse the body as
- * either regular JSON or SSE instead of losing the actionable AIR error code.
- */
+// AIR keeps streaming failures on the SSE contract even with a non-2xx status
+// (`event: error` + error JSON + `[DONE]`), so the body may be JSON or SSE.
 const parseErrorResponse = async (response: Response): Promise<RawCompletion> => {
   let raw = "";
   try {
@@ -233,7 +208,7 @@ const parseErrorResponse = async (response: Response): Promise<RawCompletion> =>
       const parsed = JSON.parse(data) as RawCompletion;
       if (parsed.error) return parsed;
     } catch {
-      // Ignore keepalives/malformed frames and keep looking for an error frame.
+      // Keepalive/malformed frame — keep looking for an error frame.
     }
   }
   return {};
@@ -258,20 +233,17 @@ interface RawStreamChunk {
       }>;
     };
   }>;
-  // Trailing usage chunk (OpenAI `stream_options.include_usage`). Carries
-  // empty `choices`, so it's read independently of the content deltas.
+  // Trailing usage chunk (`stream_options.include_usage`); carries empty `choices`.
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
     /** OpenRouter inline cost (USD), when the upstream prices the stream. */
     total_cost?: number;
     cost?: number;
-    /** OpenAI-/OpenRouter-style cache reporting. */
     prompt_tokens_details?: { cached_tokens?: number };
   };
 }
 
-// Validate that a value is JSON-serializable (no functions, symbols, undefined, circular refs)
 const isJsonSerializable = (value: unknown, seen = new WeakSet<object>()): boolean => {
   if (value === null || typeof value !== "object") {
     return typeof value !== "function" && typeof value !== "symbol" && value !== undefined;
@@ -284,7 +256,6 @@ const isJsonSerializable = (value: unknown, seen = new WeakSet<object>()): boole
   return Object.values(value).every((v) => isJsonSerializable(v, seen));
 };
 
-// Sanitize a tool definition for safe JSON transport to upstream provider
 const sanitizeTool = (tool: ToolDef): ToolDef | null => {
   const fn = tool.function;
   if (!fn || typeof fn !== "object") return null;
@@ -350,16 +321,14 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
         : {}),
     };
   }
-  // Prefer the header value — it's always present. Fall back to the envelope
-  // only when the caller asked for debug and the header was somehow stripped
-  // (proxies, browser fetch quirks).
+  // Header first (always present); the envelope is only a fallback for the
+  // debug case where a proxy stripped the header.
   if (executionId) response.executionId = executionId;
   if (raw.air) {
     const env = liftEnvelope(raw.air);
     response.air = env;
     if (!response.executionId && env.executionId) response.executionId = env.executionId;
-    // Cost: prefer AIR's server-side estimate (the non-streaming envelope
-    // carries it), else derive from the envelope's per-1k rates × token counts.
+    // Prefer AIR's server-side cost estimate, else derive from the envelope's per-1k rates.
     if (response.usage && response.usage.costUsd === undefined) {
       const derived = withDerivedCost(response.usage, env.model);
       const cost = env.usage?.costUsd ?? derived.costUsd;
@@ -377,9 +346,7 @@ const toError = (raw: RawCompletion, status: number): AirClientError => {
     httpStatus: status,
   };
   if (raw.error?.code) error.airCode = raw.error.code;
-  // Pass through any further structured fields (everything except
-  // message/type/code) — e.g. the budget/balance numbers of a 402
-  // (monthlyUsedUsd/monthlyCapUsd/…) so the UI can show exact figures.
+  // Everything beyond message/type/code (e.g. a 402's budget numbers) rides in `details`.
   if (raw.error) {
     const { message: _m, type: _t, code: _c, ...rest } = raw.error;
     if (Object.keys(rest).length > 0) error.details = rest;
@@ -389,10 +356,7 @@ const toError = (raw: RawCompletion, status: number): AirClientError => {
 
 type StreamUsage = { promptTokens?: number; completionTokens?: number; costUsd?: number; cachedTokens?: number };
 
-/** Fill `costUsd` from the chosen model's per-1k rates when the upstream didn't
- *  report a cost inline. Tokens × rate, split by input/output — AIR carries the
- *  rates on the envelope `model` block. Returns the usage unchanged when it
- *  already has a cost or the rates are unknown (free/local models). */
+// Tokens × envelope per-1k rates; unchanged when a cost is present or the rates are unknown (free/local).
 const withDerivedCost = (
   usage: StreamUsage,
   model: AirEnvelope["model"] | undefined,
@@ -427,14 +391,11 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
   for await (const frame of readSse(response)) {
     if (frame.event === "air.run") {
       try {
-        // AIR wraps the envelope as `{ object: "air.run", air: <envelope> }`
-        // (the non-streaming body nests it under `air` too). Unwrap `.air`;
-        // fall back to the frame itself for older/flat builds.
+        // AIR wraps the envelope as `{ object: "air.run", air: <envelope> }`; a flat frame is accepted too.
         const parsed = JSON.parse(frame.data) as Record<string, unknown>;
         const raw = (parsed.air ?? parsed) as Record<string, unknown>;
         const env = liftEnvelope(raw);
-        // The streaming envelope omits usage; carry the trailing usage chunk in
-        // so consumers reading `envelope.usage` see token counts + derived cost.
+        // The streaming envelope omits usage; carry the trailing usage chunk in.
         if (usage && !env.usage) env.usage = withDerivedCost(usage, env.model);
         envelope = env;
         yield { type: "model-chosen", envelope: env };
@@ -453,8 +414,7 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
     } catch {
       continue;
     }
-    // The trailing usage chunk has an empty `choices` array — read it before
-    // the choice guard below, otherwise the token counts are dropped.
+    // The trailing usage chunk has an empty `choices` array — read it before the choice guard.
     if (chunk.usage) {
       usage = {
         ...(typeof chunk.usage.prompt_tokens === "number"
@@ -466,8 +426,7 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
         ...(typeof chunk.usage.prompt_tokens_details?.cached_tokens === "number"
           ? { cachedTokens: chunk.usage.prompt_tokens_details.cached_tokens }
           : {}),
-        // Authoritative inline cost when the upstream prices the stream; else
-        // left undefined and derived from the model's rates at done-time.
+        // Inline upstream cost is authoritative; otherwise derived from the rates at done-time.
         ...(typeof chunk.usage.total_cost === "number"
           ? { costUsd: chunk.usage.total_cost }
           : typeof chunk.usage.cost === "number"
@@ -504,8 +463,7 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
 }
 
 const liftEnvelope = (raw: Record<string, unknown>): AirEnvelope => {
-  // Trust AIR's shape — narrow at the boundary, surface unknowns via `extra`.
-  // We don't validate aggressively; clients can switch on `status` / `model.id`.
+  // Narrow at the boundary without aggressive validation; unknowns surface via `extra`.
   const model = (raw.model ?? {}) as Record<string, unknown>;
   const score = (raw.score ?? {}) as Record<string, unknown>;
   const timing = (raw.timing ?? {}) as Record<string, unknown>;

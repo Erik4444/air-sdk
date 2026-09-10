@@ -1,16 +1,11 @@
-// Public wire-types for @viere/air-client.
-//
-// Mirrors the OpenAI-compatible surface that AIR speaks, plus AIR's own
-// run-envelope. Kept narrow: only what callers actually touch. Internal AIR
-// fields (quarantine state, alternatives) are surfaced via a passthrough
-// `extra` field so we don't need a client release every time AIR adds a key.
+// Public wire-types for @viere/air-client: the OpenAI-compatible surface AIR
+// speaks plus AIR's own run envelope. Kept narrow — fields AIR adds later ride
+// in the passthrough `extra`, so no client release is needed for them.
 
 export type Role = "system" | "user" | "assistant" | "tool";
 
-/**
- * OpenAI-kompatible Content-Parts für multi-modal Inputs. Text-Parts haben
- * `text`, Image-Parts ein `image_url`-Objekt (URL oder data:-URI mit base64).
- */
+/** OpenAI-kompatible Content-Parts: Text-Parts haben `text`, Image-Parts ein
+ *  `image_url`-Objekt (URL oder data:-URI mit base64). */
 export type ContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } };
@@ -20,7 +15,7 @@ export interface ChatMessage {
   content: string | ContentPart[];
   name?: string;
   tool_call_id?: string;
-  /** Assistant-emitted tool calls (set by the model, echoed back unchanged). */
+  /** Assistant-emitted tool calls, echoed back unchanged. */
   tool_calls?: ToolCall[];
 }
 
@@ -38,12 +33,12 @@ export interface ToolCall {
   type: "function";
   function: {
     name: string;
-    /** Raw JSON string as emitted by the model. Parse on the consumer side. */
+    /** Raw JSON string as emitted by the model; parse on the consumer side. */
     arguments: string;
   };
 }
 
-/** Subset of AIR's run envelope. `extra` carries any fields not modeled here. */
+/** Subset of AIR's run envelope; `extra` carries any fields not modeled here. */
 export interface AirEnvelope {
   executionId: string;
   status: "success" | "fallback_success" | "failed";
@@ -54,13 +49,10 @@ export interface AirEnvelope {
     id: string;
     provider: string;
     adapter: string;
-    /** Context window of the chosen model in tokens (from AIR's capabilities).
-     *  Consumers use it for context compaction + a usage gauge. */
+    /** Context window of the chosen model in tokens. */
     maxContext?: number;
-    /** Per-1k input/output prices (USD) of the chosen model, when AIR knows
-     *  them. Consumers compute exact cost from token counts — no own price
-     *  table. The streaming envelope omits usage, so cost is derived client-side
-     *  from these rates and the trailing usage chunk's token counts. */
+    /** Per-1k input/output prices (USD) of the chosen model; consumers derive
+     *  exact cost from these rates × token counts instead of an own price table. */
     promptCostPer1k?: number;
     completionCostPer1k?: number;
   };
@@ -78,8 +70,7 @@ export interface AirEnvelope {
     promptTokens?: number;
     completionTokens?: number;
     costUsd?: number;
-    /** Prompt tokens served from the provider's prompt cache
-     *  (`prompt_tokens_details.cached_tokens` on the wire). Absent when the
+    /** Prompt tokens served from the provider's prompt cache; absent when the
      *  upstream doesn't report caching. */
     cachedTokens?: number;
   };
@@ -93,19 +84,9 @@ export interface AirEnvelope {
   extra: Record<string, unknown>;
 }
 
-/**
- * Hard capability requirements layered onto routing for this request.
- *
- * AIR already infers constraints from the request body (tools array →
- * requireTools, image parts → requireVision, json_schema response_format →
- * requireJsonSchema, prompt size → minContext). Setting fields here can
- * *tighten* the inferred floor — useful when the caller has out-of-band
- * knowledge (e.g. "this session will need vision in a later turn, route
- * to a vision-capable model now"). It cannot weaken the inference.
- *
- * Transport: each non-default field becomes an `X-AIR-Require-*` /
- * `X-AIR-Min-Context` header. Unset = AIR's body-based inference wins.
- */
+/** Hard capability floors for routing; they can only tighten AIR's body-inferred
+ *  constraints, never weaken them. Transported as `X-AIR-Require-*` /
+ *  `X-AIR-Min-Context` headers. */
 export interface SelectionConstraints {
   /** Minimum total context window (tokens) the model must support. */
   minContext?: number;
@@ -114,23 +95,16 @@ export interface SelectionConstraints {
   requireJsonSchema?: boolean;
 }
 
-/**
- * Weight vector over AIR's score axes for a selection policy. Higher weight =
- * prefer that axis. Cost/latency are inverted at source (higher = cheaper /
- * faster), so a positive cost/latency weight means "prefer cheaper / faster".
- * Partial — omitted components fall back to the preset; AIR normalises.
- */
+/** Weight vector over AIR's score axes; cost/latency are inverted at source, so
+ *  a positive weight means "prefer cheaper / faster". Omitted axes fall back to the preset. */
 export interface PolicyWeights {
   quality?: number;
   latency?: number;
   cost?: number;
 }
 
-/**
- * Hard floors for a selection policy. Superset of the header-transported
- * SelectionConstraints — the richer gates (reliability/cost/latency ceilings,
- * EU/local, throughput/recency) ride in the request body, not headers.
- */
+/** Hard floors for a selection policy — a superset of SelectionConstraints; the
+ *  richer gates ride in the request body, not in headers. */
 export interface PolicyFloors {
   minContext?: number;
   requireTools?: boolean;
@@ -141,7 +115,7 @@ export interface PolicyFloors {
   maxLatencyMs?: number;
   localOnly?: boolean;
   euOnly?: boolean;
-  /** Only free or local models (isFree || isLocal) — the free-tier gate. */
+  /** Only free or local models — the free-tier gate. */
   freeOnly?: boolean;
   minThroughputTps?: number;
   minKnowledgeCutoff?: string;
@@ -149,11 +123,8 @@ export interface PolicyFloors {
   minQuality?: number;
 }
 
-/**
- * Full selection policy: the sort axis (`weights`) + the gates (`floors`) — the
- * sole selection surface. Sent as the `policy` body field; AIR resolves it
- * (preset name or partial object) and ranks the catalog with it on `air-auto` requests.
- */
+/** Full selection policy (sort axis + gates), sent as the `policy` body field
+ *  and resolved by AIR on `air-auto` requests. */
 export interface SelectionPolicy {
   preset?: "best" | "fast" | "cheap" | "auto";
   weights?: PolicyWeights;
@@ -168,25 +139,18 @@ export interface ChatRequest {
   topP?: number;
   maxTokens?: number;
   stop?: string | string[];
-  /** Full selection policy (weights + floors) — the sole selection surface.
-   *  Overrides the client-level default; sent as the `policy` body field. AIR
-   *  sorts by the weights and gates by the floors. */
+  /** Selection policy for this call; overrides the client-level default. */
   policy?: SelectionPolicy;
-  /** Conversation-sticky routing key for this call (`X-AIR-Session`).
-   *  Overrides the client-level `session`. */
+  /** Conversation-sticky routing key (`X-AIR-Session`); overrides the client-level `session`. */
   session?: string;
-  /** W3C trace-id (32 lowercase hex) for this call; sent as `traceparent`.
-   *  Overrides the client-level `trace`. */
+  /** W3C trace-id (32 lowercase hex) sent as `traceparent`; overrides the client-level `trace`. */
   trace?: string;
-  /** Hard routing constraints (see SelectionConstraints). Optional. */
+  /** Hard routing constraints (see SelectionConstraints). */
   constraints?: SelectionConstraints;
-  /** Force the AIR envelope into the response/stream. Defaults to client setting. */
+  /** Force the AIR envelope into the response/stream; defaults to the client setting. */
   debug?: boolean;
-  /** How hard a reasoning-capable model should think (OpenAI o-series naming;
-   *  AIR forwards it as OpenRouter's unified `reasoning.effort`). AIR silently
-   *  drops it when the routed model isn't reasoning-capable — safe to set
-   *  even when the caller doesn't know the target model ahead of time (e.g.
-   *  policy routing via `air-auto`). */
+  /** Reasoning effort (OpenAI o-series naming), forwarded as `reasoning.effort`;
+   *  AIR silently drops it when the routed model isn't reasoning-capable. */
   reasoningEffort?: "low" | "medium" | "high";
 }
 
@@ -198,43 +162,34 @@ export interface ChatResponse {
   usage?: {
     promptTokens?: number;
     completionTokens?: number;
-    /** Estimated cost (USD) of this call: the upstream's reported total when
-     *  present, else derived from the model's per-1k rates × token counts. */
+    /** Estimated cost (USD): the upstream's reported total, else per-1k rates × token counts. */
     costUsd?: number;
     /** Prompt tokens served from the provider's prompt cache. */
     cachedTokens?: number;
   };
-  /**
-   * AIR-side run id, read from the `x-air-execution-id` response header.
-   * Always populated for successful runs; pass to `AirClient.feedback`
-   * to record thumbs-up/down or a free-text comment against this exact
-   * routing decision.
-   */
+  /** AIR-side run id from the `x-air-execution-id` header; pass it to
+   *  `AirClient.feedback` to rate this exact routing decision. */
   executionId?: string;
   /** Present when `debug: true` was requested. */
   air?: AirEnvelope;
 }
 
-/**
- * Inputs to `AirClient.feedback`. `executionId` is the value surfaced by
- * `ChatResponse.executionId` (or `AirEnvelope.executionId` from a stream).
- * `success` is the only required signal; AIR derives a default outcome
- * score from it when no explicit `outcomeScore` is given.
- */
+/** Inputs to `AirClient.feedback`; `success` is the only required signal, AIR
+ *  derives a default outcome score from it. */
 export interface FeedbackRequest {
   executionId: string;
   success: boolean;
-  /** 0..1. Overrides the success-derived default in AIR's metrics rollup. */
+  /** 0..1; overrides the success-derived default in AIR's metrics rollup. */
   outcomeScore?: number;
-  /** Free-text — surfaced in the AIR dashboard, capped at 2000 chars. */
+  /** Free-text, surfaced in the AIR dashboard, capped at 2000 chars. */
   comment?: string;
 }
 
-// Stream-events emitted by `AirClient.chatStream`. Discriminated union by `type`.
+// Stream events emitted by `AirClient.chatStream`, discriminated by `type`.
 export type StreamEvent =
   | { type: "text-delta"; text: string }
-  /** Reasoning/Thinking-Delta (`delta.reasoning`) — fließt nur, wenn das Modell
-   *  Reasoning streamt und `stripReasoning` NICHT gesetzt ist. */
+  /** Reasoning-Delta (`delta.reasoning`); fließt nur, wenn das Modell Reasoning
+   *  streamt und `stripReasoning` nicht gesetzt ist. */
   | { type: "reasoning-delta"; text: string }
   | { type: "tool-call-delta"; index: number; id?: string; name?: string; argumentsDelta?: string }
   | { type: "model-chosen"; envelope: AirEnvelope }
@@ -242,14 +197,8 @@ export type StreamEvent =
       type: "done";
       finishReason: string | null;
       envelope?: AirEnvelope;
-      /**
-       * Token usage, when the upstream emitted a trailing usage chunk
-       * (OpenAI `stream_options.include_usage`). The streaming `air.run`
-       * envelope does not carry usage, so this is the canonical source for
-       * token counts on a stream. Absent when the provider sends none.
-       * `costUsd` is the upstream's reported cost when present, else derived
-       * from the chosen model's per-1k rates × these token counts.
-       */
+      /** Token usage from the trailing usage chunk (the streaming envelope carries
+       *  none); `costUsd` is the upstream's figure, else derived from per-1k rates. */
       usage?: { promptTokens?: number; completionTokens?: number; costUsd?: number; cachedTokens?: number };
     }
   | { type: "error"; error: AirClientError };
@@ -260,9 +209,7 @@ export interface AirClientError {
   httpStatus?: number;
   /** AIR-specific error code (timeout, upstream_4xx, …) when surfaced. */
   airCode?: string;
-  /** Any further structured fields of the AIR error payload (everything except
-   *  message/type/code) — e.g. a 402's budget/balance numbers
-   *  (monthlyUsedUsd/monthlyCapUsd/dailyUsedUsd/dailyCapUsd, balanceCredits).
-   *  Lets the UI show exact figures instead of parsing the message text. */
+  /** Further structured fields of the AIR error payload — e.g. a 402's
+   *  budget/balance numbers — so the UI needn't parse the message text. */
   details?: Record<string, unknown>;
 }
