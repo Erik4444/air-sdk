@@ -1,6 +1,6 @@
 {
   "name": "@viere/air-sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript SDK for AIR — OpenAI-compatible chat with model-selection trace, selection policies, and tool-call events.",
   "type": "module",
   "main": "./dist/index.js",
