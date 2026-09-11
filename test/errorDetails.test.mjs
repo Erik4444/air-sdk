@@ -104,6 +104,50 @@ test("chatStream preserves AIR code and message from a non-2xx SSE error frame",
   assert.equal(events[0].error.message, "Tool messages are not supported by this endpoint");
 });
 
+test("chatStream surfaces a mid-stream error frame after deltas (HTTP 200) instead of a clean done", async () => {
+  const body = [
+    'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+    "",
+    "event: error",
+    'data: {"error":{"message":"Upstream stream timed out: no output for 60 s mid-stream","type":"server_error","code":"timeout"}}',
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+  const client = new AirClient({
+    baseUrl: "http://air.test",
+    fetch: async () => new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    }),
+  });
+  const events = await collect(client.chatStream({
+    model: "air-auto",
+    messages: [{ role: "user", content: "hi" }],
+  }));
+  assert.deepEqual(events.map((e) => e.type), ["text-delta", "error"]);
+  assert.equal(events[1].error.airCode, "timeout");
+  assert.equal(events[1].error.httpStatus, undefined, "200 is not an error status");
+  assert.match(events[1].error.message, /timed out/);
+});
+
+test("chatStream treats a bare error object without an event name as an error too", async () => {
+  const body = [
+    'data: {"error":{"message":"Provider returned error","code":"upstream_5xx"}}',
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n");
+  const client = new AirClient({
+    baseUrl: "http://air.test",
+    fetch: async () => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+  });
+  const events = await collect(client.chatStream({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "error");
+  assert.equal(events[0].error.airCode, "upstream_5xx");
+});
+
 test("chatStream still parses regular JSON errors", async () => {
   const client = clientWithJson(429, {
     error: { message: "Try later", type: "rate_limit_error", code: "rate_limit" },

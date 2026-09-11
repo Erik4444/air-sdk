@@ -338,12 +338,13 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
   return response;
 };
 
-const toError = (raw: RawCompletion, status: number): AirClientError => {
-  const msg = raw.error?.message ?? `AIR request failed with HTTP ${status}`;
+const toError = (raw: RawCompletion, status?: number): AirClientError => {
+  const msg =
+    raw.error?.message ?? (status ? `AIR request failed with HTTP ${status}` : "AIR stream failed");
   const error: AirClientError = {
     code: raw.error?.type ?? "request_failed",
     message: msg,
-    httpStatus: status,
+    ...(typeof status === "number" ? { httpStatus: status } : {}),
   };
   if (raw.error?.code) error.airCode = raw.error.code;
   // Everything beyond message/type/code (e.g. a 402's budget numbers) rides in `details`.
@@ -408,11 +409,21 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
       yield makeDone(finishReason, envelope, usage);
       return;
     }
-    let chunk: RawStreamChunk;
+    let chunk: RawStreamChunk & { error?: RawCompletion["error"] };
     try {
-      chunk = JSON.parse(frame.data) as RawStreamChunk;
+      chunk = JSON.parse(frame.data) as RawStreamChunk & { error?: RawCompletion["error"] };
     } catch {
       continue;
+    }
+    // AIR reports a failure after the headers went out as an `event: error`
+    // frame (HTTP status already 200); some upstreams send a bare error object.
+    // Either way the stream is over — surface it instead of ending "cleanly".
+    if (frame.event === "error" || chunk.error) {
+      yield {
+        type: "error",
+        error: toError(chunk as RawCompletion, response.status >= 400 ? response.status : undefined),
+      };
+      return;
     }
     // The trailing usage chunk has an empty `choices` array — read it before the choice guard.
     if (chunk.usage) {
