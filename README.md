@@ -11,10 +11,10 @@ in the stream. This SDK is the typed way to talk to it.
 ## Install
 
 ```sh
-npm install @viere/air-sdk
+npm install github:Erik4444/air-sdk
 ```
 
-Zero runtime dependencies. Node ≥ 18 (uses global `fetch`).
+The package is not on npm yet; installing from GitHub builds it through its `prepare` script. Zero runtime dependencies. Node ≥ 18 (uses global `fetch`).
 
 ## Quick start
 
