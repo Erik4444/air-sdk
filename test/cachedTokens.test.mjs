@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { AirClient } from "../dist/index.js";
 
-// Prompt-Caching-Messung (Viere platform/plans/prompt-caching.md P1): der
+// Prompt-Caching-Messung: der
 // Upstream meldet Cache-Treffer als `usage.prompt_tokens_details.cached_tokens`
 // (OpenAI-/OpenRouter-Wire) — der Client muss sie als `cachedTokens` liefern,
 // im Stream wie non-streaming. Fehlt das Feld, bleibt `cachedTokens` absent.
