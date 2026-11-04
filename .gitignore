@@ -4,3 +4,4 @@ dist/
 
 # Arbeits-Worktrees paralleler Sessions
 .claude/worktrees/
+.DS_Store
