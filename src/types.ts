@@ -126,9 +126,11 @@ export interface PolicyFloors {
 /** Full selection policy (sort axis + gates), sent as the `policy` body field
  *  and resolved by AIR on `air-auto` requests. */
 export interface SelectionPolicy {
-  preset?: "best" | "fast" | "cheap" | "auto";
+  preset?: "best" | "balanced" | "fast" | "cheap" | "auto";
   weights?: PolicyWeights;
   floors?: PolicyFloors;
+  /** Maximum quality loss from the best eligible model, in score points. */
+  maxQualityRegret?: number;
 }
 
 export interface ChatRequest {
