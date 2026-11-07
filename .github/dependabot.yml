@@ -1,0 +1,13 @@
+# Wöchentliche Update-PRs für die Abhängigkeiten des SDK. Platform und AIR beziehen das SDK über
+# einen festen Commit; ein Merge hier ändert dort erst etwas, wenn deren Lockfile nachzieht.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
