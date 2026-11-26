@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AirClient } from "../dist/index.js";
+import { RelaisClient } from "../dist/index.js";
 
-// Build an AirClient whose injected fetch returns a fixed SSE stream, so we can
-// drive decodeStream end-to-end without a network. Mirrors AIR's debug stream
+// Build an RelaisClient whose injected fetch returns a fixed SSE stream, so we can
+// drive decodeStream end-to-end without a network. Mirrors Relais' debug stream
 // shape: content delta → trailing usage chunk → `air.run` envelope, then close
 // (no explicit [DONE] in debug mode — the socket just ends).
 const clientWithStream = (frames) =>
-  new AirClient({
-    baseUrl: "http://air.test",
+  new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () =>
       new Response(frames.join(""), {
         status: 200,
@@ -27,7 +27,7 @@ const sse = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
 const sseEnvelope = (env) =>
   `event: air.run\ndata: ${JSON.stringify({ object: "air.run", air: env })}\n\n`;
 
-// The streaming envelope from AIR carries NO usage/cost — token counts arrive in
+// The streaming envelope from Relais carries NO usage/cost — token counts arrive in
 // the trailing chunk, rates on the envelope model. The client must multiply.
 test("streaming cost is derived from the envelope's per-1k rates × token counts", async () => {
   const client = clientWithStream([
@@ -40,7 +40,7 @@ test("streaming cost is derived from the envelope's per-1k rates × token counts
     }),
   ]);
 
-  const events = await collect(client.chatStream({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }));
+  const events = await collect(client.chatStream({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }));
   const done = events.find((e) => e.type === "done");
   const chosen = events.find((e) => e.type === "model-chosen");
 
@@ -64,7 +64,7 @@ test("an upstream-reported inline cost wins over the rate-based estimate", async
     }),
   ]);
 
-  const done = (await collect(client.chatStream({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }))).find(
+  const done = (await collect(client.chatStream({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }))).find(
     (e) => e.type === "done",
   );
   assert.equal(done.usage.costUsd, 0.42);
@@ -77,7 +77,7 @@ test("no rates and no reported cost → usage carries tokens but no costUsd (fre
     sseEnvelope({ executionId: "x", status: "success", model: { id: "free", provider: "p", adapter: "ollama" } }),
   ]);
 
-  const done = (await collect(client.chatStream({ model: "air-local", messages: [{ role: "user", content: "hi" }] }))).find(
+  const done = (await collect(client.chatStream({ model: "local-model", messages: [{ role: "user", content: "hi" }] }))).find(
     (e) => e.type === "done",
   );
   assert.equal(done.usage.promptTokens, 10);

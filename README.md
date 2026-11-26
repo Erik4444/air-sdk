@@ -1,4 +1,4 @@
-# @viere/air-sdk
+# @viere/relais-sdk
 
 TypeScript SDK for [Relais](https://air.viere.tech) — OpenAI-compatible chat
 completions with a model-selection trace, selection policies, and tool-call
@@ -19,27 +19,27 @@ The package is not on npm yet; installing from GitHub builds it through its `pre
 ## Quick start
 
 ```ts
-import { AirClient } from "@viere/air-sdk";
+import { RelaisClient } from "@viere/relais-sdk";
 
-const air = new AirClient({
+const relais = new RelaisClient({
   baseUrl: "https://api.air.viere.tech",
   apiKey: process.env.AIR_API_KEY,
 });
 
 // Non-streaming: one call, routed by policy.
-const res = await air.chat({
-  model: "air-auto", // let the policy pick — or pin a concrete model id
+const res = await relais.chat({
+  model: "relais-auto", // let the policy pick — or pin a concrete model id
   messages: [{ role: "user", content: "Hello!" }],
 });
 console.log(res.message.content);
 console.log(res.model, res.usage?.costUsd);
-// res.executionId → pass to air.feedback() to rate this exact routing
-// decision; add `debug: true` to get the full AirEnvelope (res.air).
+// res.executionId → pass to relais.feedback() to rate this exact routing
+// decision; add `debug: true` to get the full RelaisEnvelope (res.relais).
 // Feedback becomes versioned, append-only quality evidence — never a
 // silent live-ranking change.
 
 // Streaming with model-selection trace and tool-call events.
-for await (const ev of air.chatStream({ model: "air-auto", messages })) {
+for await (const ev of relais.chatStream({ model: "relais-auto", messages })) {
   // ev: token deltas, model_chosen, tool_call deltas, usage, done
 }
 ```
@@ -57,7 +57,7 @@ const policy = {
   maxQualityRegret: 8,
   floors: { euOnly: true, minReliability: 80 },
 };
-await air.chat({ model: "air-auto", policy, messages });
+await relais.chat({ model: "relais-auto", policy, messages });
 ```
 
 Raw weights remain available as the custom case — once you set them, the

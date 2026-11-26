@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AirClient } from "../dist/index.js";
+import { RelaisClient } from "../dist/index.js";
 
 // Prompt-Caching-Messung: der
 // Upstream meldet Cache-Treffer als `usage.prompt_tokens_details.cached_tokens`
@@ -9,8 +9,8 @@ import { AirClient } from "../dist/index.js";
 // im Stream wie non-streaming. Fehlt das Feld, bleibt `cachedTokens` absent.
 
 const clientWith = (body, headers = { "content-type": "application/json" }) =>
-  new AirClient({
-    baseUrl: "http://air.test",
+  new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () => new Response(body, { status: 200, headers }),
   });
 
@@ -28,7 +28,7 @@ test("non-streaming: cached_tokens aus prompt_tokens_details wird zu usage.cache
       },
     }),
   );
-  const res = await client.chat({ model: "air-auto", messages: [{ role: "user", content: "hi" }] });
+  const res = await client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] });
   assert.equal(res.usage.promptTokens, 1200);
   assert.equal(res.usage.cachedTokens, 1024);
 });
@@ -41,13 +41,13 @@ test("non-streaming: ohne prompt_tokens_details bleibt cachedTokens absent", asy
       usage: { prompt_tokens: 10, completion_tokens: 2 },
     }),
   );
-  const res = await client.chat({ model: "air-auto", messages: [{ role: "user", content: "hi" }] });
+  const res = await client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] });
   assert.equal(res.usage.cachedTokens, undefined);
 });
 
 test("streaming: Trailing-Usage-Chunk trägt cachedTokens bis ins done-Event", async () => {
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () =>
       new Response(
         [
@@ -62,7 +62,7 @@ test("streaming: Trailing-Usage-Chunk trägt cachedTokens bis ins done-Event", a
       ),
   });
   const events = [];
-  for await (const ev of client.chatStream({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }))
+  for await (const ev of client.chatStream({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }))
     events.push(ev);
   const done = events.find((e) => e.type === "done");
   assert.equal(done.usage.promptTokens, 500);

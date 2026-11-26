@@ -1,5 +1,5 @@
-// Public wire-types for @viere/air-client: the OpenAI-compatible surface AIR
-// speaks plus AIR's own run envelope. Kept narrow — fields AIR adds later ride
+// Public wire-types for @viere/relais-sdk: the OpenAI-compatible surface Relais
+// speaks plus Relais' own run envelope. Kept narrow — fields Relais adds later ride
 // in the passthrough `extra`, so no client release is needed for them.
 
 export type Role = "system" | "user" | "assistant" | "tool";
@@ -38,8 +38,8 @@ export interface ToolCall {
   };
 }
 
-/** Subset of AIR's run envelope; `extra` carries any fields not modeled here. */
-export interface AirEnvelope {
+/** Subset of Relais' run envelope; `extra` carries any fields not modeled here. */
+export interface RelaisEnvelope {
   executionId: string;
   status: "success" | "fallback_success" | "failed";
   task: string;
@@ -80,11 +80,11 @@ export interface AirEnvelope {
     latencyMs: number;
     errorCode?: string;
   }>;
-  /** Original payload from AIR — use this for fields not lifted above. */
+  /** Original payload from Relais — use this for fields not lifted above. */
   extra: Record<string, unknown>;
 }
 
-/** Hard capability floors for routing; they can only tighten AIR's body-inferred
+/** Hard capability floors for routing; they can only tighten Relais' body-inferred
  *  constraints, never weaken them. Transported as `X-Relais-Require-*` /
  *  `X-Relais-Min-Context` headers. */
 export interface SelectionConstraints {
@@ -95,7 +95,7 @@ export interface SelectionConstraints {
   requireJsonSchema?: boolean;
 }
 
-/** Weight vector over AIR's score axes; cost/latency are inverted at source, so
+/** Weight vector over Relais' score axes; cost/latency are inverted at source, so
  *  a positive weight means "prefer cheaper / faster". Omitted axes fall back to the preset. */
 export interface PolicyWeights {
   quality?: number;
@@ -124,7 +124,7 @@ export interface PolicyFloors {
 }
 
 /** Full selection policy (sort axis + gates), sent as the `policy` body field
- *  and resolved by AIR on `air-auto` requests. */
+ *  and resolved by Relais on `relais-auto` requests. */
 export interface SelectionPolicy {
   preset?: "best" | "balanced" | "fast" | "cheap" | "auto";
   weights?: PolicyWeights;
@@ -149,10 +149,10 @@ export interface ChatRequest {
   trace?: string;
   /** Hard routing constraints (see SelectionConstraints). */
   constraints?: SelectionConstraints;
-  /** Force the AIR envelope into the response/stream; defaults to the client setting. */
+  /** Force the Relais envelope into the response/stream; defaults to the client setting. */
   debug?: boolean;
   /** Reasoning effort (OpenAI o-series naming), forwarded as `reasoning.effort`;
-   *  AIR silently drops it when the routed model isn't reasoning-capable. */
+   *  Relais silently drops it when the routed model isn't reasoning-capable. */
   reasoningEffort?: "low" | "medium" | "high";
 }
 
@@ -169,49 +169,49 @@ export interface ChatResponse {
     /** Prompt tokens served from the provider's prompt cache. */
     cachedTokens?: number;
   };
-  /** AIR-side run id from the `x-relais-execution-id` header; pass it to
-   *  `AirClient.feedback` to rate this exact routing decision. */
+  /** Relais-side run id from the `x-relais-execution-id` header; pass it to
+   *  `RelaisClient.feedback` to rate this exact routing decision. */
   executionId?: string;
   /** Present when `debug: true` was requested. */
-  air?: AirEnvelope;
+  relais?: RelaisEnvelope;
 }
 
-/** Inputs to `AirClient.feedback`; `success` is the only required signal, AIR
+/** Inputs to `RelaisClient.feedback`; `success` is the only required signal, Relais
  *  derives a default outcome score from it. */
 export interface FeedbackRequest {
   executionId: string;
   success: boolean;
-  /** 0..1; overrides the success-derived default in AIR's metrics rollup. */
+  /** 0..1; overrides the success-derived default in Relais' metrics rollup. */
   outcomeScore?: number;
-  /** Free-text, surfaced in the AIR dashboard, capped at 2000 chars. */
+  /** Free-text, surfaced in the Relais dashboard, capped at 2000 chars. */
   comment?: string;
 }
 
-// Stream events emitted by `AirClient.chatStream`, discriminated by `type`.
+// Stream events emitted by `RelaisClient.chatStream`, discriminated by `type`.
 export type StreamEvent =
   | { type: "text-delta"; text: string }
   /** Reasoning-Delta (`delta.reasoning`); fließt nur, wenn das Modell Reasoning
    *  streamt und `stripReasoning` nicht gesetzt ist. */
   | { type: "reasoning-delta"; text: string }
   | { type: "tool-call-delta"; index: number; id?: string; name?: string; argumentsDelta?: string }
-  | { type: "model-chosen"; envelope: AirEnvelope }
+  | { type: "model-chosen"; envelope: RelaisEnvelope }
   | {
       type: "done";
       finishReason: string | null;
-      envelope?: AirEnvelope;
+      envelope?: RelaisEnvelope;
       /** Token usage from the trailing usage chunk (the streaming envelope carries
        *  none); `costUsd` is the upstream's figure, else derived from per-1k rates. */
       usage?: { promptTokens?: number; completionTokens?: number; costUsd?: number; cachedTokens?: number };
     }
-  | { type: "error"; error: AirClientError };
+  | { type: "error"; error: RelaisClientError };
 
-export interface AirClientError {
+export interface RelaisClientError {
   code: string;
   message: string;
   httpStatus?: number;
-  /** AIR-specific error code (timeout, upstream_4xx, …) when surfaced. */
-  airCode?: string;
-  /** Further structured fields of the AIR error payload — e.g. a 402's
+  /** Relais-specific error code (timeout, upstream_4xx, …) when surfaced. */
+  relaisCode?: string;
+  /** Further structured fields of the Relais error payload — e.g. a 402's
    *  budget/balance numbers — so the UI needn't parse the message text. */
   details?: Record<string, unknown>;
 }

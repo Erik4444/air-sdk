@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AirClient } from "../dist/index.js";
+import { RelaisClient } from "../dist/index.js";
 
-// AirClient whose injected fetch returns a fixed JSON error response, so we can
+// RelaisClient whose injected fetch returns a fixed JSON error response, so we can
 // drive `toError` end-to-end without a network (mirrors the cost.test fixture).
 const clientWithJson = (status, body) =>
-  new AirClient({
-    baseUrl: "http://air.test",
+  new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () =>
       new Response(JSON.stringify(body), {
         status,
@@ -37,7 +37,7 @@ test("toError surfaces a 402 budget payload's numbers as `details`", async () =>
     },
   });
   const err = await rejection(
-    client.chat({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }),
+    client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }),
   );
   assert.ok(err, "chat() must reject on a 402");
   assert.equal(err.code, "budget_exceeded");
@@ -61,7 +61,7 @@ test("toError surfaces an insufficient_credits balance as `details`", async () =
     },
   });
   const err = await rejection(
-    client.chat({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }),
+    client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }),
   );
   assert.equal(err.code, "insufficient_credits");
   assert.equal(err.details.balanceCredits, 0);
@@ -71,13 +71,13 @@ test("toError surfaces an insufficient_credits balance as `details`", async () =
 test("toError leaves `details` unset when there are no extra fields", async () => {
   const client = clientWithJson(429, { error: { type: "rate_limit", message: "slow down" } });
   const err = await rejection(
-    client.chat({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }),
+    client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }),
   );
   assert.equal(err.code, "rate_limit");
   assert.equal(err.details, undefined);
 });
 
-test("chatStream preserves AIR code and message from a non-2xx SSE error frame", async () => {
+test("chatStream preserves Relais code and message from a non-2xx SSE error frame", async () => {
   const body = [
     "event: error",
     'data: {"error":{"message":"Tool messages are not supported by this endpoint","type":"invalid_request_error","code":"upstream_4xx"}}',
@@ -85,22 +85,22 @@ test("chatStream preserves AIR code and message from a non-2xx SSE error frame",
     "data: [DONE]",
     "",
   ].join("\n");
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () => new Response(body, {
       status: 400,
       headers: { "content-type": "text/event-stream" },
     }),
   });
   const events = await collect(client.chatStream({
-    model: "air-auto",
+    model: "relais-auto",
     messages: [{ role: "user", content: "hi" }],
   }));
   assert.equal(events.length, 1);
   assert.equal(events[0].type, "error");
   assert.equal(events[0].error.httpStatus, 400);
   assert.equal(events[0].error.code, "invalid_request_error");
-  assert.equal(events[0].error.airCode, "upstream_4xx");
+  assert.equal(events[0].error.relaisCode, "upstream_4xx");
   assert.equal(events[0].error.message, "Tool messages are not supported by this endpoint");
 });
 
@@ -114,19 +114,19 @@ test("chatStream surfaces a mid-stream error frame after deltas (HTTP 200) inste
     "data: [DONE]",
     "",
   ].join("\n");
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () => new Response(body, {
       status: 200,
       headers: { "content-type": "text/event-stream" },
     }),
   });
   const events = await collect(client.chatStream({
-    model: "air-auto",
+    model: "relais-auto",
     messages: [{ role: "user", content: "hi" }],
   }));
   assert.deepEqual(events.map((e) => e.type), ["text-delta", "error"]);
-  assert.equal(events[1].error.airCode, "timeout");
+  assert.equal(events[1].error.relaisCode, "timeout");
   assert.equal(events[1].error.httpStatus, undefined, "200 is not an error status");
   assert.match(events[1].error.message, /timed out/);
 });
@@ -138,14 +138,14 @@ test("chatStream treats a bare error object without an event name as an error to
     "data: [DONE]",
     "",
   ].join("\n");
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async () => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
   });
-  const events = await collect(client.chatStream({ model: "air-auto", messages: [{ role: "user", content: "hi" }] }));
+  const events = await collect(client.chatStream({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] }));
   assert.equal(events.length, 1);
   assert.equal(events[0].type, "error");
-  assert.equal(events[0].error.airCode, "upstream_5xx");
+  assert.equal(events[0].error.relaisCode, "upstream_5xx");
 });
 
 test("chatStream still parses regular JSON errors", async () => {
@@ -153,11 +153,11 @@ test("chatStream still parses regular JSON errors", async () => {
     error: { message: "Try later", type: "rate_limit_error", code: "rate_limit" },
   });
   const events = await collect(client.chatStream({
-    model: "air-auto",
+    model: "relais-auto",
     messages: [{ role: "user", content: "hi" }],
   }));
   assert.equal(events[0].type, "error");
   assert.equal(events[0].error.code, "rate_limit_error");
-  assert.equal(events[0].error.airCode, "rate_limit");
+  assert.equal(events[0].error.relaisCode, "rate_limit");
   assert.equal(events[0].error.message, "Try later");
 });

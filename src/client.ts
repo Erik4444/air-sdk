@@ -1,6 +1,6 @@
 import type {
-  AirClientError,
-  AirEnvelope,
+  RelaisClientError,
+  RelaisEnvelope,
   ChatRequest,
   ChatResponse,
   FeedbackRequest,
@@ -10,14 +10,14 @@ import type {
 } from "./types.js";
 import { readSse } from "./sse.js";
 
-export interface AirClientOptions {
-  /** Base URL of AIR, e.g. `http://localhost:4000`; the `/v1` prefix is appended automatically. */
+export interface RelaisClientOptions {
+  /** Base URL of Relais, e.g. `http://localhost:4000`; the `/v1` prefix is appended automatically. */
   baseUrl: string;
   /** API token, sent as `Authorization: Bearer <token>`. */
   apiKey?: string;
   /** Default selection policy (`policy` body field); per-call `req.policy` wins. */
   policy?: SelectionPolicy;
-  /** Include the AIR envelope in every response/stream (`X-Relais-Debug`). */
+  /** Include the Relais envelope in every response/stream (`X-Relais-Debug`). */
   debug?: boolean;
   /** Strip `delta.reasoning` from streaming chunks (`X-Relais-Reasoning: strip`). */
   stripReasoning?: boolean;
@@ -31,11 +31,11 @@ export interface AirClientOptions {
   signal?: AbortSignal;
 }
 
-export class AirClient {
-  private readonly opts: AirClientOptions;
+export class RelaisClient {
+  private readonly opts: RelaisClientOptions;
 
-  constructor(opts: AirClientOptions) {
-    if (!opts.baseUrl) throw new Error("AirClient: baseUrl is required");
+  constructor(opts: RelaisClientOptions) {
+    if (!opts.baseUrl) throw new Error("RelaisClient: baseUrl is required");
     this.opts = opts;
   }
 
@@ -49,9 +49,9 @@ export class AirClient {
     return fromCompletion(json, executionId);
   }
 
-  /** Record success/failure feedback for a previous run; throws `AirClientError` on non-2xx. */
+  /** Record success/failure feedback for a previous run; throws `RelaisClientError` on non-2xx. */
   async feedback(req: FeedbackRequest, signal?: AbortSignal): Promise<void> {
-    if (!req.executionId) throw new Error("AirClient.feedback: executionId is required");
+    if (!req.executionId) throw new Error("RelaisClient.feedback: executionId is required");
     const url = new URL("/api/feedback", this.opts.baseUrl).toString();
     const fetchImpl = this.opts.fetch ?? fetch;
     const headers: Record<string, string> = {
@@ -81,9 +81,9 @@ export class AirClient {
       }
       throw {
         code: "feedback_failed",
-        message: parsed.error ?? `AIR feedback failed with HTTP ${response.status}`,
+        message: parsed.error ?? `Relais feedback failed with HTTP ${response.status}`,
         httpStatus: response.status,
-      } satisfies AirClientError;
+      } satisfies RelaisClientError;
     }
   }
 
@@ -128,7 +128,7 @@ export class AirClient {
     // Policy travels in the body, not headers: the floors are richer than the header set.
     const policy = req.policy ?? this.opts.policy;
     if (policy) body.policy = policy;
-    // AIR treats these headers as a floor over body-inferred constraints: "true" can only tighten.
+    // Relais treats these headers as a floor over body-inferred constraints: "true" can only tighten.
     const c = req.constraints;
     if (c) {
       if (c.requireTools) headers["x-relais-require-tools"] = "true";
@@ -188,7 +188,7 @@ interface RawCompletion {
   error?: { message?: string; code?: string; type?: string; [key: string]: unknown };
 }
 
-// AIR keeps streaming failures on the SSE contract even with a non-2xx status
+// Relais keeps streaming failures on the SSE contract even with a non-2xx status
 // (`event: error` + error JSON + `[DONE]`), so the body may be JSON or SSE.
 const parseErrorResponse = async (response: Response): Promise<RawCompletion> => {
   let raw = "";
@@ -334,9 +334,9 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
   const rawEnvelope = raw.relais ?? raw.air;
   if (rawEnvelope) {
     const env = liftEnvelope(rawEnvelope);
-    response.air = env;
+    response.relais = env;
     if (!response.executionId && env.executionId) response.executionId = env.executionId;
-    // Prefer AIR's server-side cost estimate, else derive from the envelope's per-1k rates.
+    // Prefer Relais' server-side cost estimate, else derive from the envelope's per-1k rates.
     if (response.usage && response.usage.costUsd === undefined) {
       const derived = withDerivedCost(response.usage, env.model);
       const cost = env.usage?.costUsd ?? derived.costUsd;
@@ -346,15 +346,15 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
   return response;
 };
 
-const toError = (raw: RawCompletion, status?: number): AirClientError => {
+const toError = (raw: RawCompletion, status?: number): RelaisClientError => {
   const msg =
-    raw.error?.message ?? (status ? `AIR request failed with HTTP ${status}` : "AIR stream failed");
-  const error: AirClientError = {
+    raw.error?.message ?? (status ? `Relais request failed with HTTP ${status}` : "Relais stream failed");
+  const error: RelaisClientError = {
     code: raw.error?.type ?? "request_failed",
     message: msg,
     ...(typeof status === "number" ? { httpStatus: status } : {}),
   };
-  if (raw.error?.code) error.airCode = raw.error.code;
+  if (raw.error?.code) error.relaisCode = raw.error.code;
   // Everything beyond message/type/code (e.g. a 402's budget numbers) rides in `details`.
   if (raw.error) {
     const { message: _m, type: _t, code: _c, ...rest } = raw.error;
@@ -368,7 +368,7 @@ type StreamUsage = { promptTokens?: number; completionTokens?: number; costUsd?:
 // Tokens × envelope per-1k rates; unchanged when a cost is present or the rates are unknown (free/local).
 const withDerivedCost = (
   usage: StreamUsage,
-  model: AirEnvelope["model"] | undefined,
+  model: RelaisEnvelope["model"] | undefined,
 ): StreamUsage => {
   if (typeof usage.costUsd === "number") return usage;
   const pr = model?.promptCostPer1k;
@@ -382,7 +382,7 @@ const withDerivedCost = (
 
 const makeDone = (
   finishReason: string | null,
-  envelope: AirEnvelope | undefined,
+  envelope: RelaisEnvelope | undefined,
   usage: StreamUsage | undefined,
 ): StreamEvent => {
   const done: Extract<StreamEvent, { type: "done" }> = { type: "done", finishReason };
@@ -394,7 +394,7 @@ const makeDone = (
 };
 
 async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
-  let envelope: AirEnvelope | undefined;
+  let envelope: RelaisEnvelope | undefined;
   let finishReason: string | null = null;
   let usage: StreamUsage | undefined;
   for await (const frame of readSse(response)) {
@@ -424,7 +424,7 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
     } catch {
       continue;
     }
-    // AIR reports a failure after the headers went out as an `event: error`
+    // Relais reports a failure after the headers went out as an `event: error`
     // frame (HTTP status already 200); some upstreams send a bare error object.
     // Either way the stream is over — surface it instead of ending "cleanly".
     if (frame.event === "error" || chunk.error) {
@@ -482,7 +482,7 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
   yield makeDone(finishReason, envelope, usage);
 }
 
-const liftEnvelope = (raw: Record<string, unknown>): AirEnvelope => {
+const liftEnvelope = (raw: Record<string, unknown>): RelaisEnvelope => {
   // Narrow at the boundary without aggressive validation; unknowns surface via `extra`.
   const model = (raw.model ?? {}) as Record<string, unknown>;
   const score = (raw.score ?? {}) as Record<string, unknown>;
@@ -490,9 +490,9 @@ const liftEnvelope = (raw: Record<string, unknown>): AirEnvelope => {
   const usage = raw.usage as Record<string, unknown> | undefined;
   const attempts = Array.isArray(raw.attempts) ? (raw.attempts as Array<Record<string, unknown>>) : [];
 
-  const env: AirEnvelope = {
+  const env: RelaisEnvelope = {
     executionId: String(raw.executionId ?? ""),
-    status: (raw.status as AirEnvelope["status"]) ?? "success",
+    status: (raw.status as RelaisEnvelope["status"]) ?? "success",
     task: String(raw.task ?? ""),
     strategy: String(raw.strategy ?? ""),
     model: {
@@ -517,7 +517,7 @@ const liftEnvelope = (raw: Record<string, unknown>): AirEnvelope => {
       latencyMs: Number(timing.latencyMs ?? 0),
     },
     attempts: attempts.map((a) => {
-      const out: AirEnvelope["attempts"][number] = {
+      const out: RelaisEnvelope["attempts"][number] = {
         model: String(a.model ?? ""),
         status: (a.status as "success" | "failed") ?? "success",
         latencyMs: Number(a.latencyMs ?? 0),

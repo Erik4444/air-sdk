@@ -1,8 +1,8 @@
 // Smoke-Test: kein Test-Framework, einfach `node dist/smoke.js`.
 // Validiert SSE-Decoder + Envelope-Lift + Stream-Event-Sequenz gegen einen
-// gemockten AIR-Response. Bei Fehlschlag exit 1.
+// gemockten Relais-Antwort. Bei Fehlschlag exit 1.
 
-import { AirClient } from "./client.js";
+import { RelaisClient } from "./client.js";
 import type { StreamEvent } from "./types.js";
 
 const SSE_BODY = [
@@ -76,7 +76,7 @@ const assert = (cond: unknown, msg: string): void => {
 };
 
 async function main(): Promise<void> {
-  const client = new AirClient({
+  const client = new RelaisClient({
     baseUrl: "http://mock.local",
     debug: true,
     fetch: mockFetch,
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
 
   const events: StreamEvent[] = [];
   for await (const ev of client.chatStream({
-    model: "air-auto",
+    model: "relais-auto",
     messages: [{ role: "user", content: "ping" }],
   })) {
     events.push(ev);
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
 async function testToolSanitization(): Promise<void> {
   console.log("\n--- Tool Sanitization Test ---");
   
-  const client = new AirClient({
+  const client = new RelaisClient({
     baseUrl: "http://mock.local",
     debug: true,
     fetch: async (url, init) => {
@@ -179,7 +179,7 @@ async function testToolSanitization(): Promise<void> {
 
   try {
     for await (const _ev of client.chatStream({
-      model: "air-auto",
+      model: "relais-auto",
       messages: [{ role: "user", content: "ping" }],
       tools: [invalidTool],
     })) {

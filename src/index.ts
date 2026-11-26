@@ -1,8 +1,8 @@
-export { AirClient } from "./client.js";
-export type { AirClientOptions } from "./client.js";
+export { RelaisClient } from "./client.js";
+export type { RelaisClientOptions } from "./client.js";
 export type {
-  AirClientError,
-  AirEnvelope,
+  RelaisClientError,
+  RelaisEnvelope,
   ChatMessage,
   ChatRequest,
   ChatResponse,
