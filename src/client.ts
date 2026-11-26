@@ -17,11 +17,11 @@ export interface AirClientOptions {
   apiKey?: string;
   /** Default selection policy (`policy` body field); per-call `req.policy` wins. */
   policy?: SelectionPolicy;
-  /** Include the AIR envelope in every response/stream (`X-AIR-Debug`). */
+  /** Include the AIR envelope in every response/stream (`X-Relais-Debug`). */
   debug?: boolean;
-  /** Strip `delta.reasoning` from streaming chunks (`X-AIR-Reasoning: strip`). */
+  /** Strip `delta.reasoning` from streaming chunks (`X-Relais-Reasoning: strip`). */
   stripReasoning?: boolean;
-  /** Conversation-sticky routing key (`X-AIR-Session`); requests sharing it reuse the first chosen model while eligible. */
+  /** Conversation-sticky routing key (`X-Relais-Session`); requests sharing it reuse the first chosen model while eligible. */
   session?: string;
   /** W3C trace-id (32 lowercase hex), sent as `traceparent`; per-call `req.trace` wins. */
   trace?: string;
@@ -45,7 +45,7 @@ export class AirClient {
     const response = await this.send(body, req, signal);
     const json = (await response.json()) as RawCompletion;
     if (!response.ok) throw toError(json, response.status);
-    const executionId = response.headers.get("x-air-execution-id") ?? undefined;
+    const executionId = executionIdOf(response);
     return fromCompletion(json, executionId);
   }
 
@@ -112,10 +112,10 @@ export class AirClient {
       accept: body["stream"] ? "text/event-stream" : "application/json",
     };
     if (this.opts.apiKey) headers.authorization = `Bearer ${this.opts.apiKey}`;
-    if (debug) headers["x-air-debug"] = "true";
-    if (this.opts.stripReasoning) headers["x-air-reasoning"] = "strip";
+    if (debug) headers["x-relais-debug"] = "true";
+    if (this.opts.stripReasoning) headers["x-relais-reasoning"] = "strip";
     const session = req.session ?? this.opts.session;
-    if (session) headers["x-air-session"] = session;
+    if (session) headers["x-relais-session"] = session;
     // W3C Trace Context `00-<trace-id>-<span-id>-01`: fresh span id per request,
     // the caller's trace id ties every call of one operation together.
     const trace = req.trace ?? this.opts.trace;
@@ -131,11 +131,11 @@ export class AirClient {
     // AIR treats these headers as a floor over body-inferred constraints: "true" can only tighten.
     const c = req.constraints;
     if (c) {
-      if (c.requireTools) headers["x-air-require-tools"] = "true";
-      if (c.requireVision) headers["x-air-require-vision"] = "true";
-      if (c.requireJsonSchema) headers["x-air-require-json-schema"] = "true";
+      if (c.requireTools) headers["x-relais-require-tools"] = "true";
+      if (c.requireVision) headers["x-relais-require-vision"] = "true";
+      if (c.requireJsonSchema) headers["x-relais-require-json-schema"] = "true";
       if (typeof c.minContext === "number" && c.minContext > 0) {
-        headers["x-air-min-context"] = String(Math.floor(c.minContext));
+        headers["x-relais-min-context"] = String(Math.floor(c.minContext));
       }
     }
 
@@ -151,6 +151,12 @@ export class AirClient {
 }
 
 // ---- wire-format helpers ---------------------------------------------------
+
+// Der Dienst heißt jetzt Relais. Gesendet werden nur die neuen Namen. Gelesen werden beide: Bis
+// 2027-02-24 sendet Relais alte und neue, ein Server, der noch nicht umgestellt ist, nur alte.
+// Danach können die alten Lesepfade (`x-air-*`, `air`, `air.run`) weg.
+const executionIdOf = (response: Response): string | undefined =>
+  response.headers.get("x-relais-execution-id") ?? response.headers.get("x-air-execution-id") ?? undefined;
 
 interface RawCompletion {
   id?: string;
@@ -176,6 +182,7 @@ interface RawCompletion {
     cost?: number;
     prompt_tokens_details?: { cached_tokens?: number };
   };
+  relais?: Record<string, unknown>;
   air?: Record<string, unknown>;
   // Index signature: type-specific error fields (e.g. a 402's budget numbers) pass through to `toError`.
   error?: { message?: string; code?: string; type?: string; [key: string]: unknown };
@@ -324,8 +331,9 @@ const fromCompletion = (raw: RawCompletion, executionId?: string): ChatResponse 
   // Header first (always present); the envelope is only a fallback for the
   // debug case where a proxy stripped the header.
   if (executionId) response.executionId = executionId;
-  if (raw.air) {
-    const env = liftEnvelope(raw.air);
+  const rawEnvelope = raw.relais ?? raw.air;
+  if (rawEnvelope) {
+    const env = liftEnvelope(rawEnvelope);
     response.air = env;
     if (!response.executionId && env.executionId) response.executionId = env.executionId;
     // Prefer AIR's server-side cost estimate, else derive from the envelope's per-1k rates.
@@ -390,11 +398,12 @@ async function* decodeStream(response: Response): AsyncGenerator<StreamEvent> {
   let finishReason: string | null = null;
   let usage: StreamUsage | undefined;
   for await (const frame of readSse(response)) {
-    if (frame.event === "air.run") {
+    if (frame.event === "relais.run" || frame.event === "air.run") {
       try {
-        // AIR wraps the envelope as `{ object: "air.run", air: <envelope> }`; a flat frame is accepted too.
+        // The envelope comes wrapped as `{ object: "relais.run", relais: <envelope> }`; in the
+        // transition the frame is still `air.run` with `air` and `relais`. A flat frame is accepted too.
         const parsed = JSON.parse(frame.data) as Record<string, unknown>;
-        const raw = (parsed.air ?? parsed) as Record<string, unknown>;
+        const raw = (parsed.relais ?? parsed.air ?? parsed) as Record<string, unknown>;
         const env = liftEnvelope(raw);
         // The streaming envelope omits usage; carry the trailing usage chunk in.
         if (usage && !env.usage) env.usage = withDerivedCost(usage, env.model);

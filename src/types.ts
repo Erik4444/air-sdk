@@ -85,8 +85,8 @@ export interface AirEnvelope {
 }
 
 /** Hard capability floors for routing; they can only tighten AIR's body-inferred
- *  constraints, never weaken them. Transported as `X-AIR-Require-*` /
- *  `X-AIR-Min-Context` headers. */
+ *  constraints, never weaken them. Transported as `X-Relais-Require-*` /
+ *  `X-Relais-Min-Context` headers. */
 export interface SelectionConstraints {
   /** Minimum total context window (tokens) the model must support. */
   minContext?: number;
@@ -143,7 +143,7 @@ export interface ChatRequest {
   stop?: string | string[];
   /** Selection policy for this call; overrides the client-level default. */
   policy?: SelectionPolicy;
-  /** Conversation-sticky routing key (`X-AIR-Session`); overrides the client-level `session`. */
+  /** Conversation-sticky routing key (`X-Relais-Session`); overrides the client-level `session`. */
   session?: string;
   /** W3C trace-id (32 lowercase hex) sent as `traceparent`; overrides the client-level `trace`. */
   trace?: string;
@@ -169,7 +169,7 @@ export interface ChatResponse {
     /** Prompt tokens served from the provider's prompt cache. */
     cachedTokens?: number;
   };
-  /** AIR-side run id from the `x-air-execution-id` header; pass it to
+  /** AIR-side run id from the `x-relais-execution-id` header; pass it to
    *  `AirClient.feedback` to rate this exact routing decision. */
   executionId?: string;
   /** Present when `debug: true` was requested. */
