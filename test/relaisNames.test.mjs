@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AirClient } from "../dist/index.js";
+import { RelaisClient } from "../dist/index.js";
 
-// Relais statt AIR: Das SDK sendet nur die neuen Namen und liest beide, damit es gegen alte
+// Relais statt Relais: Das SDK sendet nur die neuen Namen und liest beide, damit es gegen alte
 // Server, in der Übergangszeit (beide Namen) und danach (nur neue) läuft.
 
 const ENV = {
@@ -16,7 +16,7 @@ const ENV = {
 
 const recording = (respond) => {
   const calls = [];
-  const client = new AirClient({
+  const client = new RelaisClient({
     baseUrl: "http://relais.test",
     apiKey: "sk-proj-relais-test",
     debug: true,
@@ -85,7 +85,7 @@ test("liest die Ausführungs-ID aus dem neuen und aus dem alten Header", async (
 test("liest den Umschlag aus relais, aus air und aus beiden", async () => {
   for (const body of [{ relais: ENV }, { air: ENV }, { relais: ENV, air: ENV }]) {
     const res = await recording(json({ ...COMPLETION, ...body })).client.chat(REQ);
-    assert.equal(res.air?.executionId, "exec-1", JSON.stringify(Object.keys(body)));
+    assert.equal(res.relais?.executionId, "exec-1", JSON.stringify(Object.keys(body)));
     assert.equal(res.executionId, "exec-1");
   }
 });

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AirClient } from "../dist/index.js";
+import { RelaisClient } from "../dist/index.js";
 
 // Regression für `ChatRequest.reasoningEffort` → muss als `reasoning_effort`
-// im ausgehenden Request-Body landen (AIR entscheidet server-seitig, ob das
+// im ausgehenden Request-Body landen (Relais entscheidet server-seitig, ob das
 // geroutete Modell es überhaupt anwendet).
 
 const minimalCompletion = () =>
@@ -18,8 +18,8 @@ const minimalCompletion = () =>
 
 test("chat(): reasoningEffort is forwarded as reasoning_effort in the request body", async () => {
   let capturedBody;
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async (_url, init) => {
       capturedBody = JSON.parse(init.body);
       return minimalCompletion();
@@ -27,7 +27,7 @@ test("chat(): reasoningEffort is forwarded as reasoning_effort in the request bo
   });
 
   await client.chat({
-    model: "air-best",
+    model: "relais-auto",
     messages: [{ role: "user", content: "hi" }],
     reasoningEffort: "high",
   });
@@ -37,23 +37,23 @@ test("chat(): reasoningEffort is forwarded as reasoning_effort in the request bo
 
 test("chat(): reasoning_effort is omitted from the body when reasoningEffort isn't set", async () => {
   let capturedBody;
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async (_url, init) => {
       capturedBody = JSON.parse(init.body);
       return minimalCompletion();
     },
   });
 
-  await client.chat({ model: "air-best", messages: [{ role: "user", content: "hi" }] });
+  await client.chat({ model: "relais-auto", messages: [{ role: "user", content: "hi" }] });
 
   assert.equal("reasoning_effort" in capturedBody, false);
 });
 
 test("chatStream(): reasoningEffort is forwarded as reasoning_effort in the request body", async () => {
   let capturedBody;
-  const client = new AirClient({
-    baseUrl: "http://air.test",
+  const client = new RelaisClient({
+    baseUrl: "http://relais.test",
     fetch: async (_url, init) => {
       capturedBody = JSON.parse(init.body);
       return new Response("data: [DONE]\n\n", {
@@ -64,7 +64,7 @@ test("chatStream(): reasoningEffort is forwarded as reasoning_effort in the requ
   });
 
   const gen = client.chatStream({
-    model: "air-best",
+    model: "relais-auto",
     messages: [{ role: "user", content: "hi" }],
     reasoningEffort: "low",
   });
