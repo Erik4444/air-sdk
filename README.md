@@ -1,10 +1,10 @@
 # @viere/air-sdk
 
-TypeScript SDK for [AIR](https://air.viere.tech) — OpenAI-compatible chat
+TypeScript SDK for [Relais](https://air.viere.tech) — OpenAI-compatible chat
 completions with a model-selection trace, selection policies, and tool-call
 events.
 
-AIR routes each request to the best model for the job (quality / latency /
+Relais routes each request to the best model for the job (quality / latency /
 cost weights, hard floors like EU-only or vision-required) and tells you *why*
 in the stream. This SDK is the typed way to talk to it.
 
@@ -86,4 +86,4 @@ tighten routing beyond what the body implies.
 
 Extracted from the Viere Platform monorepo (2026-07) on the way to a
 standalone release. API surface is small and stable; expect additive changes
-around the selection trace as AIR grows.
+around the selection trace as Relais grows.
