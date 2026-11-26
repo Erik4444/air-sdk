@@ -1,6 +1,6 @@
 # @viere/relais-sdk
 
-TypeScript SDK for [Relais](https://air.viere.tech) — OpenAI-compatible chat
+TypeScript SDK for [Relais](https://relais.viere.tech) — OpenAI-compatible chat
 completions with a model-selection trace, selection policies, and tool-call
 events.
 
@@ -22,7 +22,7 @@ The package is not on npm yet; installing from GitHub builds it through its `pre
 import { RelaisClient } from "@viere/relais-sdk";
 
 const relais = new RelaisClient({
-  baseUrl: "https://api.air.viere.tech",
+  baseUrl: "https://api.relais.viere.tech",
   apiKey: process.env.AIR_API_KEY,
 });
 
